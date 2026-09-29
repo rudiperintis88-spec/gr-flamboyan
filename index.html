@@ -145,6 +145,7 @@
       <button class="tab-btn active" data-tab="debitur">Per Debitur</button>
       <button class="tab-btn" data-tab="kategori">Per Kategori</button>
       <button class="tab-btn" data-tab="penagihan">Penagihan Piutang</button>
+      <button class="tab-btn" data-tab="prioritas">Prioritas Tagihan</button>
     </div>
     <div id="content"></div>
   </div>
@@ -309,12 +310,36 @@ function groupDebtors(invs){
   return { total: total, count: invs.length, debtors: buildDebtors(invs), invs: invs };
 }
 
+var COL_DEFAULT = { no:0, cust:1, nama:2, nopol:3, faktur:4, top:5, tgljto:6, jumlah:7, giro:8, sacode:9, sa:10, hari:11, divisi:12, kategori:14 };
+var COL_ALIASES = {
+  no: ['no'], cust: ['nocust','nocustomer','kodecust','kodecustomer'], nama: ['namadebitur','debitur','namacustomer'],
+  nopol: ['nopolisi','nopol','polisi'], faktur: ['fakturno','nofaktur','faktur'], top: ['top'],
+  tgljto: ['tgljto','tgljatuhtempo','jatuhtempo'], jumlah: ['jumlah','nilai','saldo'], giro: ['giro'],
+  sacode: ['sa'], sa: ['namasa'], hari: ['hari','umur','umurpiutang'],
+  divisi: ['divisi','division','div'], kategori: ['kategori','category','cabang','jenis']
+};
+var COL = Object.assign({}, COL_DEFAULT), COL_INFO = '';
+function normHdr(s){ return String(s == null ? '' : s).replace(/^\uFEFF/, '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function colLetter(n){ var s = ''; n = n + 1; while (n > 0){ var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+function mapColumns(hdr){
+  var col = Object.assign({}, COL_DEFAULT), info = [];
+  Object.keys(COL_ALIASES).forEach(function(k){
+    var found = -1;
+    for (var j = 0; j < hdr.length; j++){ if (COL_ALIASES[k].indexOf(normHdr(hdr[j])) >= 0){ found = j; break; } }
+    if (found >= 0) col[k] = found;
+    if (k === 'divisi' || k === 'kategori' || k === 'hari') info.push(k.charAt(0).toUpperCase() + k.slice(1) + '=' + colLetter(col[k]) + (found >= 0 ? '' : ' (default)'));
+  });
+  COL_INFO = 'Kolom: ' + info.join(', ');
+  return col;
+}
+
 function processRows(rows) {
   let headerIdx = -1;
   for (let i = 0; i < rows.length; i++) {
-    if (rows[i][0] && rows[i][0].trim() === 'No') { headerIdx = i; break; }
+    if (rows[i].some(function(c){ return normHdr(c) === 'namadebitur'; }) || (rows[i][0] && rows[i][0].trim() === 'No')) { headerIdx = i; break; }
   }
   if (headerIdx === -1) throw new Error("Format kolom tidak dikenali (header 'No' tidak ditemukan)");
+  COL = mapColumns(rows[headerIdx]);
 
   let reportTitle = '';
   for (let i = 0; i < headerIdx; i++) {
@@ -330,15 +355,16 @@ function processRows(rows) {
   const dataRows = [];
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r[0] || !/^\d+$/.test(r[0].trim())) continue;
+    var nv = r[COL.no]; if (!nv || !/^\d+$/.test(nv.trim())) continue;
     dataRows.push(r);
   }
 
   var invs = dataRows.map(function(r){
-    var nama = (r[2] || '').trim(); nama = NAME_MAP[nama] || nama;
-    var f = { cust: (r[1] || '').trim(), faktur: (r[4] || '').trim(), divisi: (r[12] || '').trim(), rawKat: r[14] };
-    return { nama: nama, cust: f.cust, faktur: f.faktur, tgljto: (r[6] || '').trim(), nopol: r[3] || '',
-             sa: r[10] || '', hari: r[11] || '', jumlah: parseAmount(r[7]), top: (r[5] || '').trim(), giro: (r[8] || '').trim(), sacode: (r[9] || '').trim(),
+    var g = function(k){ var v = r[COL[k]]; return (v == null ? '' : String(v)).trim(); };
+    var nama = g('nama'); nama = NAME_MAP[nama] || nama;
+    var f = { cust: g('cust'), faktur: g('faktur'), divisi: g('divisi'), rawKat: g('kategori') };
+    return { nama: nama, cust: f.cust, faktur: f.faktur, tgljto: g('tgljto'), nopol: g('nopol'),
+             sa: g('sa'), hari: g('hari'), jumlah: parseAmount(g('jumlah')), top: g('top'), giro: g('giro'), sacode: g('sacode'),
              divisi: normalizeDivisi(f.divisi), kategori: tentukanKategori(f) };
   });
   var grandTotal = 0; invs.forEach(function(i){ grandTotal += i.jumlah; });
@@ -374,14 +400,15 @@ function computeAgingBuckets(debtors) {
 function renderAgingCards(debtors) {
   const buckets = computeAgingBuckets(debtors);
   var html = '';
-  Object.values(buckets).forEach(b => {
-    html += '<div style="background:' + (b.warn ? '#fdecee' : 'var(--panel)') + ';border:1px solid ' + (b.warn ? '#f3b9c0' : 'var(--border)') + ';border-radius:14px;padding:18px 20px;">' +
+  Object.keys(buckets).forEach(key => { var b = buckets[key]; var act = (currentTab === 'penagihan' && penBucket === key);
+    html += '<div data-bucket="' + key + '" title="Klik untuk lihat detail" style="cursor:pointer;' + (act ? 'box-shadow:0 0 0 2px var(--blue);' : '') + 'background:' + (b.warn ? '#fdecee' : 'var(--panel)') + ';border:1px solid ' + (b.warn ? '#f3b9c0' : 'var(--border)') + ';border-radius:14px;padding:18px 20px;">' +
       '<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + b.color + ';margin-right:6px;"></span>' + b.label + '</div>' +
       '<div style="font-family:Georgia,serif;font-size:22px;font-weight:600;color:' + (b.warn ? 'var(--red)' : 'var(--ink)') + ';">' + rupiah(b.total) + '</div>' +
       '<div style="font-size:12px;color:' + (b.warn ? 'var(--red)' : 'var(--muted-2)') + ';margin-top:4px;">' + numId(b.count) + ' faktur' + (b.warn ? ' &middot; prioritas tagih' : '') + '</div>' +
     '</div>';
   });
   document.getElementById('agingGrid').innerHTML = html;
+  document.querySelectorAll('#agingGrid [data-bucket]').forEach(el => el.addEventListener('click', () => selectBucket(el.getAttribute('data-bucket'))));
 }
 
 function createDebtorHtml(d, keyPrefix) {
@@ -504,6 +531,55 @@ function renderPenagihanTab(dd){
   wireContentHandlers();
 }
 
+var priBucket = 'b4', priCab = 'all', priKat = 'all', priDeb = 'all';
+function renderPrioritasTab(dd){
+  var uniq = function(k){ return Object.keys(dd.invs.reduce(function(m, i){ m[i[k]] = 1; return m; }, {})).sort(); };
+  var kats = uniq('kategori'), debs = uniq('nama'), cabSet = dd.invs.reduce(function(m, i){ m[i.divisi] = 1; return m; }, {});
+  var cabs = DIVISI_ORDER.filter(function(n){ return cabSet[n]; }).concat(Object.keys(cabSet).filter(function(n){ return DIVISI_ORDER.indexOf(n) < 0; }).sort());
+  if (cabs.indexOf(priCab) < 0) priCab = 'all';
+  if (kats.indexOf(priKat) < 0) priKat = 'all';
+  if (debs.indexOf(priDeb) < 0) priDeb = 'all';
+  var R = { all: [-1e9, 1e9], b1: [1, 7], b2: [8, 14], b3: [15, 26], b4: [27, 1e9] }[priBucket];
+  var list = dd.invs.filter(function(i){
+    var h = parseInt(i.hari, 10); if (isNaN(h)) h = 0;
+    if (priBucket !== 'all' && (h < R[0] || h > R[1])) return false;
+    if (priCab !== 'all' && i.divisi !== priCab) return false;
+    if (priKat !== 'all' && i.kategori !== priKat) return false;
+    return priDeb === 'all' || i.nama === priDeb;
+  });
+  var total = 0; list.forEach(function(i){ total += i.jumlah; });
+  var css = 'padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel);color:var(--ink);font-size:13.5px;';
+  var opt = function(arr, cur, allLabel){
+    return '<option value="all"' + (cur === 'all' ? ' selected' : '') + '>' + allLabel + '</option>' +
+      arr.map(function(v){ return '<option value="' + escapeHtml(v) + '"' + (v === cur ? ' selected' : '') + '>' + escapeHtml(v) + '</option>'; }).join('');
+  };
+  var hariOpts = [['all','Semua umur'],['b1','1-7 hari'],['b2','8-14 hari'],['b3','15-26 hari'],['b4','> 26 hari']].map(function(o){
+    return '<option value="' + o[0] + '"' + (o[0] === priBucket ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('');
+  var rows = '';
+  sortInvoices(list).forEach(function(i, n){
+    rows += '<tr><td class="num">' + (n + 1) + '</td><td>' + escapeHtml(i.faktur) + '</td><td>' + escapeHtml(i.nama) + '</td><td>' + escapeHtml(i.tgljto) +
+      '</td><td>' + escapeHtml(i.nopol || '-') + '</td><td>' + escapeHtml(i.sa) + '</td><td class="num">' + escapeHtml(String(i.hari || '-')) + '</td><td class="num">' + rupiah(i.jumlah) + '</td></tr>';
+  });
+  if (!list.length) rows = '<tr><td colspan="8" class="loading">Tidak ada faktur yang cocok.</td></tr>';
+  document.getElementById('content').innerHTML =
+    '<div class="search-bar" style="display:flex;gap:10px;flex-wrap:wrap;"><select id="priBucket" style="' + css + '">' + hariOpts + '</select>' +
+    (FIXED_DIVISI ? '' : '<select id="priCab" style="' + css + '">' + opt(cabs, priCab, 'Semua cabang') + '</select>') +
+    '<select id="priKat" style="' + css + '">' + opt(kats, priKat, 'Semua kategori') + '</select>' +
+    '<select id="priDeb" style="' + css + 'max-width:280px;">' + opt(debs, priDeb, 'Semua debitur') + '</select></div>' +
+    '<div class="bar-title">Prioritas tagihan &middot; ' + numId(list.length) + ' faktur &middot; ' + rupiah(total) + '</div>' +
+    '<div class="debtor" style="padding:6px 16px 12px;"><div class="table-scroll"><table><thead><tr>' + thS('no','No','num') + thS('faktur','No Faktur') + thS('nama','Debitur') +
+    thS('tgljto','Tgl Jto') + thS('nopol','No Polisi') + thS('sa','SA') + thS('hari','Hari','num') + thS('jumlah','Jumlah','num') + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  wireContentHandlers();
+}
+
+function selectBucket(key){
+  penBucket = (currentTab === 'penagihan' && penBucket === key) ? 'all' : key;
+  currentTab = 'penagihan'; searchQuery = '';
+  document.querySelectorAll('#innerTabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'penagihan'));
+  renderContent();
+  var c = document.getElementById('innerTabs'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function wireContentHandlers() {
   var s = document.getElementById('search');
   if (s) {
@@ -517,7 +593,7 @@ function wireContentHandlers() {
       renderContent();
     });
   });
-  var pf = { penBucket: v => { penBucket = v; }, penCab: v => { penCab = v; }, penKat: v => { penKat = v; }, penDeb: v => { penDeb = v; } };
+  var pf = { priBucket: v => { priBucket = v; }, priCab: v => { priCab = v; }, priKat: v => { priKat = v; }, priDeb: v => { priDeb = v; }, penBucket: v => { penBucket = v; }, penCab: v => { penCab = v; }, penKat: v => { penKat = v; }, penDeb: v => { penDeb = v; } };
   Object.keys(pf).forEach(id => { var el = document.getElementById(id); if (el) el.addEventListener('change', e => { pf[id](e.target.value); renderContent(); }); });
   document.querySelectorAll('[data-sort]').forEach(th => {
     th.addEventListener('click', () => {
@@ -547,7 +623,9 @@ function renderContent(){
   var ss = typing ? a.selectionStart : 0, se = typing ? a.selectionEnd : 0;
   if (currentTab === 'debitur') renderDebiturTab(dd.debtors);
   else if (currentTab === 'penagihan') renderPenagihanTab(dd);
+  else if (currentTab === 'prioritas') renderPrioritasTab(dd);
   else renderKategoriTab(dd);
+  renderAgingCards(dd.debtors);
   if (typing) { var s = document.getElementById('search'); if (s) { s.focus(); s.setSelectionRange(ss, se); } }
 }
 function renderDivisiPanel(){
@@ -575,7 +653,7 @@ function renderDivisiTabs(){
   tabsEl.querySelectorAll('.divisi-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       currentDivisi = btn.getAttribute('data-divisi');
-      searchQuery = ''; openDebtorKeys = {}; openCabangKeys = {}; penCab = 'all'; penKat = 'all'; penDeb = 'all';
+      searchQuery = ''; openDebtorKeys = {}; openCabangKeys = {}; penCab = 'all'; penKat = 'all'; penDeb = 'all'; priCab = 'all'; priKat = 'all'; priDeb = 'all';
       tabsEl.querySelectorAll('.divisi-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       renderDivisiPanel();
@@ -624,7 +702,7 @@ async function loadData() {
 
     const now = new Date();
     statusEl.classList.remove('err');
-    statusEl.innerHTML = 'Terakhir disinkron: <b>' + now.toLocaleString('id-ID') + '</b>';
+    statusEl.innerHTML = 'Terakhir disinkron: <b>' + now.toLocaleString('id-ID') + '</b> &middot; ' + COL_INFO;
   } catch (err) {
     statusEl.classList.add('err');
     statusEl.textContent = 'Gagal memuat data.';
