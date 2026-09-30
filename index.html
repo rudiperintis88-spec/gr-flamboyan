@@ -106,7 +106,17 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+<div id="loginGate" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:32px;width:320px;max-width:100%;box-shadow:0 4px 16px rgba(0,0,0,.08);">
+    <p style="font-weight:700;font-size:18px;margin:0 0 4px;font-family:Georgia,serif;">Piutang GR Flamboyan</p>
+    <p style="color:var(--muted);font-size:13px;margin:0 0 18px;">PT Perintis Perkasa, Medan</p>
+    <input type="password" id="gatePassword" placeholder="Masukkan password" autofocus
+      style="width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;margin-bottom:10px;background:var(--bg);color:var(--ink);">
+    <button id="gateSubmit" class="btn" style="width:100%;justify-content:center;">Masuk</button>
+    <p id="gateError" style="color:var(--red);font-size:12.5px;margin-top:10px;display:none;">Password salah, coba lagi.</p>
+  </div>
+</div>
+<div class="wrap" style="display:none;">
 
 
   <div class="topline">
@@ -720,9 +730,24 @@ function setupAutoRefresh() {
 }
 autoToggle.addEventListener('change', setupAutoRefresh);
 
-// Tanpa password: langsung muat data
-loadData();
-setupAutoRefresh();
+// Password gerbang masuk — GANTI teks di dalam tanda kutip ini kalau mau password lain
+const DASHBOARD_PASSWORD = "perintispf2026";
+
+function tryLogin(){
+  var val = document.getElementById('gatePassword').value;
+  if (val === DASHBOARD_PASSWORD){
+    document.getElementById('loginGate').style.display = 'none';
+    document.querySelector('.wrap').style.display = '';
+    loadData();
+    setupAutoRefresh();
+  } else {
+    document.getElementById('gateError').style.display = 'block';
+    document.getElementById('gatePassword').value = '';
+    document.getElementById('gatePassword').focus();
+  }
+}
+document.getElementById('gateSubmit').addEventListener('click', tryLogin);
+document.getElementById('gatePassword').addEventListener('keydown', function(e){ if (e.key === 'Enter') tryLogin(); });
 
 </script>
 </body>
