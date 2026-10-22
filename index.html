@@ -40,6 +40,11 @@
   .frames iframe.on{display:block;}
   @media (max-width:640px){ .bar{padding:0 10px;} .brandbar{display:none;} .tab{padding:15px 14px 12px;font-size:14px;} }
 </style>
+<style>
+#lockName{width:100% !important;box-sizing:border-box !important;background:#F5F6F8 !important;border:1px solid transparent !important;border-radius:16px !important;padding:20px 22px !important;font-size:16px !important;line-height:1.3 !important;color:#171B21 !important;font-family:inherit !important;text-align:left !important;margin:0 0 12px !important;-webkit-appearance:none !important;appearance:none !important;}
+#lockName::placeholder{color:#9aa3b1 !important;opacity:1 !important;}
+#lockName:focus{outline:none !important;border-color:#6D28D9 !important;box-shadow:none !important;}
+</style>
 </head>
 <body>
 
@@ -48,7 +53,10 @@
     <p class="t">GR Flamboyan</p>
     <p class="s">PT Perintis Perkasa, Medan</p>
     <div class="pw">
-      <input type="password" id="pw" placeholder="Masukkan password" autocomplete="off" autofocus>
+      <input type="text" id="lockName" placeholder="Nama" autocomplete="off" autofocus>
+    </div>
+    <div class="pw">
+      <input type="password" id="pw" placeholder="Masukkan password" autocomplete="off">
       <button type="button" id="eye" aria-label="Tampilkan password"></button>
     </div>
     <button class="go" id="go" type="button">Masuk</button>
@@ -69,6 +77,30 @@
 /* Password — ganti teks di dalam tanda kutip kalau mau password lain.
    Tidak disimpan di browser: setiap halaman dimuat ulang (reload), password diminta lagi. */
 var PASSWORD = "perintispf2026";
+var CABANG_NAME = 'GR Flamboyan';
+var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzggGiQKV0_odLfKqXtshav6Sg7vrlgt85jegYPyy8jNRhNqEfvSK-Q8xPNsGHIZFFxWA/exec';
+var NAMA_KATA_TERLARANG = ["bpkb","gagak","hitam","gatsu","flamboyan","piutang","followup","follow","up","dashboard","cabang","cash","leasing","perintis","perkasa","test","tes","admin","nama","adam","malik","body","repair","otoxpert","material"];
+function validName(v){
+  v = (v || '').trim();
+  if (!/^[A-Za-z.' -]+$/.test(v)) return false;
+  var words = v.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return false;
+  var lower = v.toLowerCase();
+  for (var i = 0; i < NAMA_KATA_TERLARANG.length; i++){
+    if (lower.indexOf(NAMA_KATA_TERLARANG[i]) >= 0) return false;
+  }
+  return true;
+}
+function sendLoginNotif(nama){
+  try {
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ nama: nama, cabang: CABANG_NAME, waktu: new Date().toISOString() })
+    });
+  } catch (e) {}
+}
 
 /* Isi tiap laporan (dijalankan di dalam iframe agar CSS & script masing-masing tidak bentrok) */
 var DOCS = {
@@ -79,6 +111,9 @@ var DOCS = {
 var EYE_ON  = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 var EYE_OFF = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 var pw = document.getElementById('pw'), eye = document.getElementById('eye');
+var lockNameInput = document.getElementById('lockName');
+lockNameInput.focus();
+lockNameInput.addEventListener('keydown', function(e){ if (e.key === 'Enter'){ e.preventDefault(); pw.focus(); } });
 eye.innerHTML = EYE_ON;
 eye.addEventListener('click', function(){
   var show = pw.type === 'password';
@@ -106,11 +141,20 @@ document.querySelectorAll('.tab').forEach(function(b){
 });
 
 function tryLogin(){
+  if (!validName(lockNameInput.value)) {
+    document.getElementById('err').textContent = 'Masukkan nama lengkap yang benar (minimal 2 kata).';
+    document.getElementById('err').style.display = 'block';
+    lockNameInput.focus();
+    return;
+  }
   if (pw.value === PASSWORD) {
+    document.getElementById('err').style.display = 'none';
+    sendLoginNotif(lockNameInput.value.trim());
     document.getElementById('gate').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     showTab('piutang');
   } else {
+    document.getElementById('err').textContent = 'Password salah, coba lagi.';
     document.getElementById('err').style.display = 'block';
     pw.value = ''; pw.focus();
   }
